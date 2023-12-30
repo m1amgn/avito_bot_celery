@@ -1,0 +1,77 @@
+version: "3"
+
+services:
+  web:
+    build:
+      context: .
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./avito_bot:/avito_bot
+      - static_volume:/static
+      # staticfiles doesn't read in this version, it fixed manualy in docker conteiner by copy static folder from avito_bot to static forlder in root folder
+      # should be update volumes between nginx and django to read staticfiles after collectstatic
+    command: gunicorn avito_bot.wsgi:application --bind 0.0.0.0:8002
+
+
+  nginx:
+    build: nginx
+    restart: unless-stopped
+    volumes:
+      - static_volume:/static
+    ports:
+      - 82:82
+    depends_on:
+      - web
+
+  redis:
+    image: redis
+    hostname: redis
+
+  worker:
+    build:
+      context: .
+    hostname: worker
+    command: 'celery -A celery_app.app worker -l info'
+    volumes:
+      - ./avito_bot:/avito_bot
+    links:
+      - redis
+    depends_on:
+      - redis
+    environment:
+      - DJANGO_SETTINGS_MODULE=avito_bot.settings
+
+  beat_schedule:
+    build:
+      context: .
+    hostname: beat_schedule
+    command: 'celery -A celery_app.app beat -l info'
+    volumes:
+      - ./avito_bot:/avito_bot
+    links:
+      - redis
+    depends_on:
+      - redis
+    environment:
+      - DJANGO_SETTINGS_MODULE=avito_bot.settings
+
+  flower:
+    build:
+      context: .
+    hostname: flower
+    command: 'celery -A celery_app.app flower'
+    volumes:
+      - ./avito_bot:/avito_bot
+    links:
+      - redis
+    depends_on:
+      - redis
+    ports:
+      - "5555:5555"
+    environment:
+      - DJANGO_SETTINGS_MODULE=avito_bot.settings
+
+volumes:
+  static_volume:
+
